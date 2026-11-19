@@ -1,0 +1,8 @@
+{
+  "name": "Archivum",
+  "description": "Multi-source historical data retrieval engine unifying AtlasPI, Vetustas, Day in History, Wikimedia, Wikidata, open museums, and archival libraries with grounded research synthesis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
