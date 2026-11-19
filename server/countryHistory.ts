@@ -176,6 +176,7 @@ interface CountryYearPageResult {
   exactDayBullets: Array<{ text: string; refs: string[] }>;
   sameMonthBullets: Array<{ day: number | null; text: string; refs: string[] }>;
   annualBullets: Array<{ text: string; refs: string[] }>;
+  incumbents: Array<{ name: string; title: string }>;
   pageUrl: string;
 }
 
@@ -210,9 +211,31 @@ async function fetchWikipediaCountryYearPage(
     const exactDayBullets: Array<{ text: string; refs: string[] }> = [];
     const sameMonthBullets: Array<{ day: number | null; text: string; refs: string[] }> = [];
     const annualBullets: Array<{ text: string; refs: string[] }> = [];
+    const incumbents: Array<{ name: string; title: string }> = [];
+
+    // Extract == Incumbents == section if present (e.g., President, Prime Minister, Monarch, Chairman)
+    const incSectionMatch = wikitext.match(/\n==\s*Incumbents\s*==([\s\S]*?)(?=\n==[^=]|$)/i);
+    if (incSectionMatch) {
+      const incLines = incSectionMatch[1].split('\n');
+      for (const rawInc of incLines) {
+        const trimmedInc = rawInc.trim();
+        if (!trimmedInc.startsWith('*')) continue;
+        const { text: cleanedInc } = cleanWikitext(trimmedInc.replace(/^\*+\s*/, ''));
+        const colonIdx = cleanedInc.indexOf(':');
+        if (colonIdx > 0 && colonIdx < 48) {
+          const role = cleanedInc.slice(0, colonIdx).trim();
+          const holder = cleanedInc.slice(colonIdx + 1).trim();
+          if (role && holder && holder.length > 2 && holder.length < 90 && !/^(none|vacant)$/i.test(holder)) {
+            incumbents.push({ title: role, name: holder });
+          }
+        }
+        if (incumbents.length >= 6) break;
+      }
+    }
 
     // Look at == Events == section before Births/Deaths (handles piped Category headings too)
-    const eventsSplit = wikitext.split(/\n==[^=\n]*(?:Births|Deaths|References|See also)[^=\n]*==/i)[0] ?? wikitext;
+    const afterInc = wikitext.replace(/\n==\s*Incumbents\s*==[\s\S]*?(?=\n==[^=]|$)/i, '');
+    const eventsSplit = afterInc.split(/\n==[^=\n]*(?:Births|Deaths|References|See also)[^=\n]*==/i)[0] ?? afterInc;
     const lines = eventsSplit.split('\n');
 
     let inTargetMonth = false;
@@ -269,10 +292,47 @@ async function fetchWikipediaCountryYearPage(
       exactDayBullets,
       sameMonthBullets: sameMonthBullets.slice(0, 8),
       annualBullets: annualBullets.slice(0, 6),
+      incumbents,
       pageUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
     };
   }
 
+  return null;
+}
+
+async function fetchWikipediaEraSummary(country: CountryEntry, year: number): Promise<string | null> {
+  const cacheKey = `wp-era:${country.code}:${year}`;
+  const hit = getCached<string | null>(cacheKey);
+  if (hit !== null) return hit;
+
+  const candidates = year >= 1700
+    ? [
+        `${year} in ${country.wikiTitle}`,
+        `${year} in ${country.name}`,
+        `History of ${country.wikiTitle}`,
+      ]
+    : [`History of ${country.wikiTitle}`, `History of ${country.name}`];
+
+  for (const title of [...new Set(candidates)]) {
+    try {
+      const slug = encodeURIComponent(title.replace(/ /g, '_'));
+      const data = await fetchJson<{ extract?: string; type?: string }>(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`,
+        6500
+      );
+      if (data.extract && data.type !== 'disambiguation' && data.extract.length > 40) {
+        // Ignore generic one-line "Events from the year 1975 in ..." boilerplate if too short
+        if (!/^Events from the year \d+ in [^.]+$/i.test(data.extract.trim())) {
+          setCached(cacheKey, data.extract.trim(), 60 * 60 * 1000);
+          return data.extract.trim();
+        }
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  setCached(cacheKey, null, 60 * 60 * 1000);
   return null;
 }
 
@@ -482,11 +542,12 @@ export async function fetchCountryHistoryForDate(
   // Per-country parallel enrichment
   const bundles = await Promise.all(
     validCountries.map(async (country): Promise<CountryHistoryBundle> => {
-      const [whereWasRes, wpYearRes, wpSearchRes, vetustasRes] = await Promise.allSettled([
+      const [whereWasRes, wpYearRes, wpSearchRes, vetustasRes, wpEraRes] = await Promise.allSettled([
         whereWasAtlasPI(country.lat, country.lon, year),
         fetchWikipediaCountryYearPage(country, year, monthName, day),
         fetchWikipediaCountrySearch(country, year, monthName, day),
         fetchVetustasCountryYear(country, year),
+        fetchWikipediaEraSummary(country, year),
       ]);
 
       const whereWasEntitiesRaw =
@@ -527,6 +588,24 @@ export async function fetchCountryHistoryForDate(
           reignSpan: `${r.reign_start ?? '?'}–${r.reign_end ?? '?'}`,
           entityName: r.entity_name_fallback,
         }));
+
+      // Merge Wikipedia Year-page ==Incumbents== when not already listed
+      if (wpYearRes.status === 'fulfilled' && wpYearRes.value?.incumbents.length) {
+        const seenRulerNames = new Set(matchedRulers.map((r) => r.name.toLowerCase()));
+        for (const inc of wpYearRes.value.incumbents) {
+          if (!seenRulerNames.has(inc.name.toLowerCase())) {
+            seenRulerNames.add(inc.name.toLowerCase());
+            matchedRulers.push({
+              name: inc.name,
+              title: inc.title,
+              reignSpan: formatYearDisplay(year),
+              entityName: `${country.name} (Wikipedia)`,
+            });
+          }
+        }
+      }
+
+      const eraOverview = wpEraRes.status === 'fulfilled' ? wpEraRes.value : null;
 
       const exactDateEvents: CountryEventRecord[] = [];
       const aroundDateEvents: CountryEventRecord[] = [];
@@ -760,6 +839,7 @@ export async function fetchCountryHistoryForDate(
         flag: countryFlagEmoji(country.code),
         capital: country.capital,
         region: country.region,
+        eraOverview,
         sovereignPolities,
         rulersInOffice: matchedRulers.slice(0, 6),
         exactDateEvents,

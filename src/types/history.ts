@@ -313,6 +313,7 @@ export interface CountryHistoryBundle {
   flag: string;
   capital: string;
   region: string;
+  eraOverview?: string | null;
   sovereignPolities: Array<{
     id: number;
     name: string;

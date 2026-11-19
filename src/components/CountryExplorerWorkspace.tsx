@@ -7,7 +7,6 @@ import {
   Loader2,
   MapPin,
   Search,
-  Sparkles,
 } from 'lucide-react';
 import type {
   CountryComparisonAnalysis,
@@ -161,7 +160,7 @@ export function CountryExplorerWorkspace({ isDark }: CountryExplorerWorkspacePro
     setAnalyzing(true);
     setAnalysisError(null);
     try {
-      const res = await fetch('/api/assistant/country-compare', {
+      const res = await fetch('/api/country-compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -300,7 +299,7 @@ export function CountryExplorerWorkspace({ isDark }: CountryExplorerWorkspacePro
                   disabled={analyzing}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg border border-[#D6CEBE] dark:border-[#3A3630] bg-[#FBF9F5] dark:bg-[#141311] text-[#1C1917] dark:text-[#F5F2EB] hover:bg-[#F3EFE7] dark:hover:bg-[#22201D] disabled:opacity-50 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                 >
-                  {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-[#9A3412] dark:text-[#EA8C55]" />}
+                  {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitCompare className="w-4 h-4 text-[#9A3412] dark:text-[#EA8C55]" />}
                   {result.countries.length >= 2 ? 'Compare Side-by-Side' : 'Summarize Context'}
                 </button>
               )}
@@ -590,8 +589,8 @@ export function CountryExplorerWorkspace({ isDark }: CountryExplorerWorkspacePro
                         </div>
                       </div>
 
-                      {(bundle.sovereignPolities.length > 0 || bundle.rulersInOffice.length > 0) && (
-                        <div className="pt-2.5 border-t border-[#E5DFD3] dark:border-[#2C2925] text-xs space-y-1 text-[#44403C] dark:text-[#D6CEBE]">
+                      {(bundle.sovereignPolities.length > 0 || bundle.rulersInOffice.length > 0 || bundle.eraOverview) && (
+                        <div className="pt-2.5 border-t border-[#E5DFD3] dark:border-[#2C2925] text-xs space-y-1.5 text-[#44403C] dark:text-[#D6CEBE]">
                           {bundle.sovereignPolities.length > 0 && (
                             <div>
                               <span className="font-semibold text-[#1C1917] dark:text-[#F5F2EB]">
@@ -603,12 +602,17 @@ export function CountryExplorerWorkspace({ isDark }: CountryExplorerWorkspacePro
                           {bundle.rulersInOffice.length > 0 && (
                             <div>
                               <span className="font-semibold text-[#1C1917] dark:text-[#F5F2EB]">
-                                Rulers:{' '}
+                                Leaders:{' '}
                               </span>
                               {bundle.rulersInOffice
                                 .map((r) => `${r.name}${r.title ? ` (${r.title})` : ''}`)
                                 .join(' · ')}
                             </div>
+                          )}
+                          {bundle.eraOverview && (
+                            <p className="text-[12px] leading-relaxed text-[#57534E] dark:text-[#B8B2A6] pt-1">
+                              {bundle.eraOverview}
+                            </p>
                           )}
                         </div>
                       )}

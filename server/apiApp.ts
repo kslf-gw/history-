@@ -8,14 +8,9 @@ import {
   runUnifiedSearch,
   whereWasAtlasPI,
 } from './historicalSources.ts';
-import {
-  analyzeCountryComparison,
-  briefYearSnapshot,
-  compareHistoricalRecords,
-  synthesizeHistoricalRecords,
-} from './geminiAssistant.ts';
+import { analyzeCountryComparison } from './countryComparison.ts';
 import { fetchCountryHistoryForDate } from './countryHistory.ts';
-import type { AtlasYearSnapshot, CountryHistoryBundle, HistoricalRecord, SourceProviderId } from '../src/types/history.ts';
+import type { CountryHistoryBundle, SourceProviderId } from '../src/types/history.ts';
 
 export function createApiApp() {
   const app = express();
@@ -122,46 +117,6 @@ export function createApiApp() {
     }
   });
 
-  app.post('/api/assistant/synthesize', async (req, res) => {
-    try {
-      const query = String(req.body?.query ?? '').trim();
-      const records = (req.body?.records ?? []) as HistoricalRecord[];
-      if (!query || !Array.isArray(records) || records.length === 0) {
-        return res.status(400).json({ error: 'Query and retrieved records are required.' });
-      }
-      const synthesis = await synthesizeHistoricalRecords(query, records);
-      return res.json(synthesis);
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Gemini synthesis failed' });
-    }
-  });
-
-  app.post('/api/assistant/compare', async (req, res) => {
-    try {
-      const records = (req.body?.records ?? []) as HistoricalRecord[];
-      if (!Array.isArray(records) || records.length < 2) {
-        return res.status(400).json({ error: 'At least two records are required for comparison.' });
-      }
-      const comparison = await compareHistoricalRecords(records);
-      return res.json(comparison);
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Gemini comparison failed' });
-    }
-  });
-
-  app.post('/api/assistant/year-briefing', async (req, res) => {
-    try {
-      const snapshot = req.body?.snapshot as AtlasYearSnapshot | undefined;
-      if (!snapshot || typeof snapshot.year !== 'number') {
-        return res.status(400).json({ error: 'Valid year snapshot payload is required.' });
-      }
-      const briefing = await briefYearSnapshot(snapshot);
-      return res.json(briefing);
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Year briefing failed' });
-    }
-  });
-
   app.post('/api/country-history', async (req, res) => {
     try {
       const year = Number.parseInt(String(req.body?.year), 10);
@@ -186,7 +141,7 @@ export function createApiApp() {
     }
   });
 
-  app.post('/api/assistant/country-compare', async (req, res) => {
+  const handleCountryCompare = async (req: express.Request, res: express.Response) => {
     try {
       const dateDisplay = String(req.body?.dateDisplay ?? '').trim();
       const countries = (req.body?.countries ?? []) as CountryHistoryBundle[];
@@ -198,7 +153,10 @@ export function createApiApp() {
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : 'Country comparison failed' });
     }
-  });
+  };
+
+  app.post('/api/country-compare', handleCountryCompare);
+  app.post('/api/assistant/country-compare', handleCountryCompare);
 
   return app;
 }
